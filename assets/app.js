@@ -20,7 +20,7 @@ const fallbackRestaurants = FALLBACK_NAMES.map(([name, cuisine], index) => ({
   notes: "", dish: "", visited: "", created: "2026-01-01T00:00:00.000Z"
 }));
 
-const state = { restaurants: [], search: "", status: "all", cuisine: "all", sort: "overall", lastFocus: null, deleteTimer: null };
+const state = { restaurants: [], search: "", status: "all", sort: "overall", lastFocus: null, deleteTimer: null };
 const el = {};
 
 document.addEventListener("DOMContentLoaded", init);
@@ -34,9 +34,9 @@ async function init() {
 }
 
 function cacheElements() {
-  ["restaurantGrid","emptyState","search","statusFilter","sortBy","cuisineFilters","resultCount","resultsTitle",
+  ["restaurantGrid","emptyState","search","statusFilter","sortBy","resultCount","resultsTitle",
     "statTotal","statRated","statAverage","statTop","statReturn","addRestaurant","exportData","importData","importFile",
-    "restaurantModal","restaurantForm","modalTitle","modalEyebrow","recordId","name","cuisine","visited","food","ambiance",
+    "restaurantModal","restaurantForm","modalTitle","modalEyebrow","recordId","name","food","ambiance",
     "price","overall","returnVerdict","dish","notes","weightedAverage","deleteRestaurant","toast"
   ].forEach(id => { el[id] = document.getElementById(id); });
 }
@@ -46,12 +46,6 @@ function bindEvents() {
   el.search.addEventListener("input", event => { state.search = event.target.value.trim().toLowerCase(); renderCards(); });
   el.statusFilter.addEventListener("change", event => { state.status = event.target.value; renderCards(); });
   el.sortBy.addEventListener("change", event => { state.sort = event.target.value; renderCards(); });
-  el.cuisineFilters.addEventListener("click", event => {
-    const button = event.target.closest("button[data-cuisine]");
-    if (!button) return;
-    state.cuisine = button.dataset.cuisine;
-    renderCuisineFilters(); renderCards();
-  });
   el.restaurantGrid.addEventListener("click", event => {
     const card = event.target.closest("article[data-id]");
     if (card) openModal(card.dataset.id);
@@ -130,7 +124,7 @@ function effectiveScore(restaurant) { return restaurant.overall ?? weightedScore
 function rounded(value) { return value === null ? "—" : (Math.round(value * 10) / 10).toFixed(1); }
 function isRated(restaurant) { return effectiveScore(restaurant) !== null; }
 
-function render() { renderStats(); renderCuisineFilters(); renderCards(); }
+function render() { renderStats(); renderCards(); }
 
 function renderStats() {
   const rated = state.restaurants.filter(isRated);
@@ -143,18 +137,11 @@ function renderStats() {
   el.statReturn.textContent = state.restaurants.filter(item => item.returnVerdict === "yes").length;
 }
 
-function renderCuisineFilters() {
-  const counts = new Map();
-  state.restaurants.forEach(item => counts.set(item.cuisine, (counts.get(item.cuisine) || 0) + 1));
-  const chips = [["all", "All", state.restaurants.length], ...[...counts.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([name,count]) => [name,name,count])];
-  el.cuisineFilters.innerHTML = chips.map(([value,label,count]) => `<button class="chip" type="button" data-cuisine="${escapeHtml(value)}" aria-pressed="${String(state.cuisine === value)}">${escapeHtml(label)} <span>${count}</span></button>`).join("");
-}
-
 function getVisibleRestaurants() {
   const filtered = state.restaurants.filter(item => {
-    const haystack = [item.name,item.cuisine,item.dish,item.notes].join(" ").toLowerCase();
+    const haystack = [item.name,item.dish,item.notes].join(" ").toLowerCase();
     const statusMatch = state.status === "all" || (state.status === "rated" && isRated(item)) || (state.status === "unrated" && !isRated(item)) || item.returnVerdict === state.status;
-    return (!state.search || haystack.includes(state.search)) && statusMatch && (state.cuisine === "all" || item.cuisine === state.cuisine);
+    return (!state.search || haystack.includes(state.search)) && statusMatch;
   });
   return filtered.sort(compareRestaurants);
 }
@@ -169,8 +156,8 @@ function compareRestaurants(a, b) {
     return a.name.localeCompare(b.name);
   }
   if (state.sort === "name") return a.name.localeCompare(b.name);
-  const av = state.sort === "visited" ? a.visited : a.created;
-  const bv = state.sort === "visited" ? b.visited : b.created;
+  const av = a.created;
+  const bv = b.created;
   if (!av && bv) return 1;
   if (av && !bv) return -1;
   return String(bv).localeCompare(String(av)) || a.name.localeCompare(b.name);
@@ -179,7 +166,7 @@ function compareRestaurants(a, b) {
 function renderCards() {
   const items = getVisibleRestaurants();
   el.resultCount.textContent = `${items.length} ${items.length === 1 ? "place" : "places"}`;
-  el.resultsTitle.textContent = state.cuisine === "all" ? "Every restaurant" : state.cuisine;
+  el.resultsTitle.textContent = "Every restaurant";
   el.emptyState.hidden = items.length > 0;
   el.restaurantGrid.innerHTML = items.map((item,index) => cardTemplate(item,index)).join("");
 }
@@ -192,7 +179,7 @@ function cardTemplate(item, index) {
   const verdictLabels = { yes: "Would return", maybe: "Maybe return", no: "Wouldn't return", "": "Return undecided" };
   return `<article class="restaurant-card ${score === null ? "is-unrated" : ""}" data-id="${escapeHtml(item.id)}" tabindex="0" aria-label="Edit ${escapeHtml(item.name)}">
     <svg class="card-watermark" aria-hidden="true"><use href="#icon-leaf"/></svg>
-    <div class="card-head"><div class="card-head__copy">${SCORE_SORTS.has(state.sort) && score !== null ? `<span class="rank">No. ${index + 1}</span>` : ""}<h3>${escapeHtml(item.name)}</h3><div class="card-meta"><span class="cuisine-tag">${escapeHtml(item.cuisine)}</span>${item.visited ? `<span>${escapeHtml(formatDate(item.visited))}</span>` : ""}</div></div>
+    <div class="card-head"><div class="card-head__copy">${SCORE_SORTS.has(state.sort) && score !== null ? `<span class="rank">No. ${index + 1}</span>` : ""}<h3>${escapeHtml(item.name)}</h3></div>
     <div class="score-medallion"><strong>${rounded(score)}</strong><small>${item.overall !== null ? "gut" : score === null ? "unrated" : "score"}</small></div></div>
     ${score === null ? `<p class="unrated-label">Not yet rated</p>` : `<div class="score-bars">${ratingBars}</div>`}
     ${item.dish ? `<p class="card-detail"><strong>Order this</strong> ${escapeHtml(item.dish)}</p>` : ""}
@@ -207,8 +194,7 @@ function openModal(id = "") {
   resetDeleteButton();
   el.restaurantForm.reset();
   el.recordId.value = item?.id || "";
-  el.name.value = item?.name || ""; el.cuisine.value = item?.cuisine === "Uncategorised" ? "" : item?.cuisine || "";
-  el.visited.value = item?.visited || ""; el.overall.value = item?.overall ?? ""; el.returnVerdict.value = item?.returnVerdict || "";
+  el.name.value = item?.name || ""; el.overall.value = item?.overall ?? ""; el.returnVerdict.value = item?.returnVerdict || "";
   el.dish.value = item?.dish || ""; el.notes.value = item?.notes || "";
   ["food","ambiance","price"].forEach(key => setScoreEnabled(key, item?.[key] !== null && item?.[key] !== undefined, item?.[key] ?? 7.5));
   updateVerdictButtons(el.returnVerdict.value); updateRatingReadout();
@@ -253,7 +239,7 @@ function saveForm(event) {
   const existing = state.restaurants.find(item => item.id === el.recordId.value);
   const candidate = normalizeRestaurant({
     id: existing?.id || `restaurant-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
-    name: el.name.value, cuisine: el.cuisine.value, visited: el.visited.value,
+    name: el.name.value, cuisine: existing?.cuisine || "Uncategorised", visited: existing?.visited || "",
     food: scoreFromInput(el.food), ambiance: scoreFromInput(el.ambiance), price: scoreFromInput(el.price), overall: el.overall.value,
     returnVerdict: el.returnVerdict.value, dish: el.dish.value, notes: el.notes.value, created: existing?.created || new Date().toISOString()
   });
@@ -319,11 +305,6 @@ function showToast(message) {
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
-}
-
-function formatDate(value) {
-  const [year,month,day] = value.split("-").map(Number);
-  return new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" }).format(new Date(year,month - 1,day));
 }
 
 window.RestaurantAtlas = Object.freeze({ WEIGHTS, weightedScore, effectiveScore, normalizeRestaurant });

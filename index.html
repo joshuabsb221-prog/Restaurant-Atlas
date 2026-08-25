@@ -45,14 +45,13 @@
       <div class="toolbar__top">
         <label class="search-field"><span class="sr-only">Search restaurants</span><svg><use href="#icon-search"/></svg><input id="search" type="search" placeholder="Search names, dishes, notes…" autocomplete="off"></label>
         <label><span>Show</span><select id="statusFilter"><option value="all">Everything</option><option value="rated">Rated only</option><option value="unrated">Not yet rated</option><option value="yes">Would return</option><option value="no">Would not return</option></select></label>
-        <label><span>Sort by</span><select id="sortBy"><option value="overall">Overall score</option><option value="food">Food</option><option value="ambiance">Ambiance</option><option value="price">Value</option><option value="visited">Recently visited</option><option value="created">Recently added</option><option value="name">Name A–Z</option></select></label>
+        <label><span>Sort by</span><select id="sortBy"><option value="overall">Overall score</option><option value="food">Food</option><option value="ambiance">Ambiance</option><option value="price">Value</option><option value="created">Recently added</option><option value="name">Name A–Z</option></select></label>
         <div class="toolbar__actions">
           <button class="button button--quiet" id="exportData" type="button"><svg><use href="#icon-download"/></svg> Export</button>
           <button class="button button--quiet" id="importData" type="button"><svg><use href="#icon-upload"/></svg> Import</button>
           <input id="importFile" type="file" accept="application/json,.json" hidden>
         </div>
       </div>
-      <div class="cuisine-row" id="cuisineFilters" aria-label="Filter by cuisine"></div>
     </section>
 
     <div class="results-head"><div><p class="eyebrow eyebrow--green">Your collection</p><h2 id="resultsTitle">Every restaurant</h2></div><p id="resultCount" aria-live="polite"></p></div>
@@ -70,8 +69,6 @@
           <input type="hidden" id="returnVerdict" name="returnVerdict">
           <div class="field-grid">
             <label class="field field--wide"><span>Name <b aria-hidden="true">*</b></span><input id="name" name="name" required maxlength="120" autocomplete="off"></label>
-            <label class="field"><span>Cuisine / type</span><input id="cuisine" name="cuisine" maxlength="80" autocomplete="off"></label>
-            <label class="field"><span>Date visited</span><input id="visited" name="visited" type="date"></label>
           </div>
 
           <fieldset class="ratings"><legend>Rate the experience</legend><p class="field-help">Leave all three blank if you haven't scored this place yet.</p>
