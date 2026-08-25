@@ -455,10 +455,14 @@ function renderCards() {
   el.resultCount.textContent = `${items.length} ${items.length === 1 ? "place" : "places"}`;
   el.resultsTitle.textContent = "Every restaurant";
   el.emptyState.hidden = items.length > 0;
-  el.restaurantGrid.innerHTML = items.map((item,index) => cardTemplate(item,index)).join("");
+  let rank = 0;
+  el.restaurantGrid.innerHTML = items.map(item => {
+    const sortedScore = state.sort === "overall" ? effectiveScore(item) : SCORE_SORTS.has(state.sort) ? item[state.sort] : null;
+    return cardTemplate(item, sortedScore !== null ? ++rank : null);
+  }).join("");
 }
 
-function cardTemplate(item, index) {
+function cardTemplate(item, rank) {
   const score = effectiveScore(item);
   const ratingBars = [
     ["Food",item.food,""],["Ambiance",item.ambiance,""],["Value",item.price,"score-bar--value"]
@@ -466,7 +470,7 @@ function cardTemplate(item, index) {
   const verdictLabels = { yes: "Would return", maybe: "Maybe return", no: "Wouldn't return", "": "Return undecided" };
   return `<article class="restaurant-card ${score === null ? "is-unrated" : ""}" data-id="${escapeHtml(item.id)}" tabindex="0" aria-label="Edit ${escapeHtml(item.name)}">
     <svg class="card-watermark" aria-hidden="true"><use href="#icon-leaf"/></svg>
-    <div class="card-head"><div class="card-head__copy">${SCORE_SORTS.has(state.sort) && score !== null ? `<span class="rank">No. ${index + 1}</span>` : ""}<h3>${escapeHtml(item.name)}</h3></div>
+    <div class="card-head"><div class="card-head__copy">${SCORE_SORTS.has(state.sort) && rank !== null ? `<span class="rank">No. ${rank}</span>` : ""}<h3>${escapeHtml(item.name)}</h3></div>
     <div class="score-medallion"><strong>${rounded(score)}</strong><small>${item.overall !== null ? "gut" : score === null ? "unrated" : "score"}</small></div></div>
     ${score === null ? `<p class="unrated-label">Not yet rated</p>` : `<div class="score-bars">${ratingBars}</div>`}
     ${item.dish ? `<p class="card-detail"><strong>Order this</strong> ${escapeHtml(item.dish)}</p>` : ""}
