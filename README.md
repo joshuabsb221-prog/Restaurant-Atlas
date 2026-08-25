@@ -1,6 +1,6 @@
 # Restaurant Atlas
 
-A dependency-free personal restaurant log and ranking site, ready for GitHub Pages. It stores changes in your browser and lets you export a versioned JSON backup.
+A personal restaurant log and ranking site, ready for GitHub Pages. The interface is plain HTML, CSS and JavaScript; Supabase provides password-free sign-in, shared storage, live updates and change history.
 
 ## Publish with GitHub Pages
 
@@ -34,9 +34,15 @@ The weighted score is `(food × 2 + ambiance + value) ÷ 4`. A gut score, when p
 
 To rebalance the categories, edit the `WEIGHTS` constant at the top of `assets/app.js`. The formula automatically divides by the sum of the weights.
 
-## Back up your atlas
+## Shared access and backups
 
-Browser storage is device-local. After adding or editing places, use **Export** to download `restaurants.json`, replace `data/restaurants.json` with it, and commit that change to GitHub. This gives you a readable, versioned backup. **Import** safely merges a backup by ID, or by case-insensitive restaurant name when no ID matches; it never wipes the collection.
+Approved people select **Sign in to sync**, enter their email address and use the secure link sent to their inbox. Signed-in members see the same restaurant list, receive live updates, and can open **History** to see who changed an entry and when.
+
+Owners also see **Members**. From there, they can add another email, correct or replace an existing address, promote a member to owner, or remove access. The database prevents the final owner from being removed or demoted.
+
+The browser copy remains available while signed out or temporarily offline. **Export** downloads a readable JSON backup. **Import** safely merges a backup by ID, or by case-insensitive restaurant name when no ID matches; it does not create duplicate entries.
+
+The database setup is recorded in `supabase/schema.sql`. It includes row-level security, member access rules, edit-version checks, automatic history records and realtime publication.
 
 ## Other metrics you could add
 

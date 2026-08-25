@@ -1,5 +1,9 @@
 const WEIGHTS = Object.freeze({ food: 2, ambiance: 1, price: 1 });
 const STORAGE_KEY = "restaurant-atlas-v1";
+const SUPABASE_CONFIG = Object.freeze({
+  url: "https://cpcoyeuoyeqjmmbowjkh.supabase.co",
+  publishableKey: "sb_publishable_yIFHBlWGnuMf7g__ydJXTw_w2at4huL"
+});
 const SCORE_SORTS = new Set(["overall", "food", "ambiance", "price"]);
 const FALLBACK_NAMES = [
   ["Bill's","British"],["Oka","Japanese"],["Matsuba","Japanese"],["Passione Vino","Italian"],
@@ -20,8 +24,12 @@ const fallbackRestaurants = FALLBACK_NAMES.map(([name, cuisine], index) => ({
   notes: "", dish: "", visited: "", created: "2026-01-01T00:00:00.000Z"
 }));
 
-const state = { restaurants: [], search: "", status: "all", sort: "overall", lastFocus: null, deleteTimer: null };
+const state = {
+  restaurants: [], search: "", status: "all", sort: "overall", lastFocus: null, deleteTimer: null,
+  session: null, memberRole: "", remote: false, remoteChannel: null, cloudBusy: false
+};
 const el = {};
+let supabaseClient = null;
 
 document.addEventListener("DOMContentLoaded", init);
 
@@ -31,13 +39,16 @@ async function init() {
   bindEvents();
   state.restaurants = await loadRestaurants();
   render();
+  initializeCloud();
 }
 
 function cacheElements() {
   ["restaurantGrid","emptyState","search","statusFilter","sortBy","resultCount","resultsTitle",
     "statTotal","statRated","statAverage","statTop","statReturn","addRestaurant","exportData","importData","importFile",
     "restaurantModal","restaurantForm","modalTitle","modalEyebrow","recordId","name","food","ambiance",
-    "price","overall","returnVerdict","dish","notes","weightedAverage","deleteRestaurant","toast"
+    "price","overall","returnVerdict","dish","notes","weightedAverage","deleteRestaurant","toast",
+    "syncStatus","signInButton","historyButton","membersButton","signOutButton","authModal","authForm","authEmail",
+    "membersModal","memberForm","memberEmail","memberList","historyModal","historyList"
   ].forEach(id => { el[id] = document.getElementById(id); });
 }
 
@@ -69,7 +80,21 @@ function bindEvents() {
   el.exportData.addEventListener("click", exportData);
   el.importData.addEventListener("click", () => el.importFile.click());
   el.importFile.addEventListener("change", importData);
-  document.addEventListener("keydown", event => { if (event.key === "Escape" && !el.restaurantModal.hidden) closeModal(); });
+  el.signInButton.addEventListener("click", () => setModal(el.authModal, true, el.authEmail));
+  el.authForm.addEventListener("submit", sendSignInLink);
+  el.signOutButton.addEventListener("click", signOut);
+  el.historyButton.addEventListener("click", openHistory);
+  el.membersButton.addEventListener("click", openMembers);
+  el.memberForm.addEventListener("submit", addMember);
+  el.memberList.addEventListener("click", handleMemberAction);
+  document.querySelectorAll("[data-close-auth]").forEach(node => node.addEventListener("click", () => setModal(el.authModal, false)));
+  document.querySelectorAll("[data-close-members]").forEach(node => node.addEventListener("click", () => setModal(el.membersModal, false)));
+  document.querySelectorAll("[data-close-history]").forEach(node => node.addEventListener("click", () => setModal(el.historyModal, false)));
+  document.addEventListener("keydown", event => {
+    if (event.key !== "Escape") return;
+    if (!el.restaurantModal.hidden) closeModal();
+    else [el.authModal, el.membersModal, el.historyModal].forEach(modal => { if (!modal.hidden) setModal(modal, false); });
+  });
 }
 
 async function loadRestaurants() {
@@ -107,11 +132,273 @@ function normalizeRestaurant(input = {}, index = 0) {
     name,
     cuisine: String(input.cuisine || "Uncategorised").trim().slice(0, 80) || "Uncategorised",
     food: cleanScore(input.food), ambiance: cleanScore(input.ambiance), price: cleanScore(input.price), overall: cleanScore(input.overall),
-    returnVerdict: allowedVerdicts.has(input.returnVerdict) ? input.returnVerdict : "",
+    returnVerdict: allowedVerdicts.has(input.returnVerdict ?? input.return_verdict) ? (input.returnVerdict ?? input.return_verdict) : "",
     notes: String(input.notes || "").slice(0, 1500), dish: String(input.dish || "").slice(0, 160),
     visited: /^\d{4}-\d{2}-\d{2}$/.test(String(input.visited || "")) ? String(input.visited) : "",
-    created: Number.isNaN(createdDate.getTime()) ? new Date().toISOString() : createdDate.toISOString()
+    created: Number.isNaN(createdDate.getTime()) ? new Date().toISOString() : createdDate.toISOString(),
+    version: Number.isInteger(Number(input.version)) ? Number(input.version) : 0,
+    updatedAt: String(input.updatedAt || input.updated_at || "")
   };
+}
+
+function fromRemote(row) {
+  return normalizeRestaurant({
+    ...row,
+    returnVerdict: row.return_verdict,
+    updatedAt: row.updated_at,
+    cuisine: "Uncategorised",
+    visited: ""
+  });
+}
+
+function toRemote(restaurant) {
+  return {
+    id: restaurant.id,
+    name: restaurant.name,
+    food: restaurant.food,
+    ambiance: restaurant.ambiance,
+    price: restaurant.price,
+    overall: restaurant.overall,
+    return_verdict: restaurant.returnVerdict,
+    dish: restaurant.dish,
+    notes: restaurant.notes,
+    created: restaurant.created
+  };
+}
+
+async function initializeCloud() {
+  if (!window.supabase?.createClient) {
+    setSyncStatus("Local only", "error");
+    return;
+  }
+  try {
+    supabaseClient = window.supabase.createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.publishableKey, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) throw error;
+    await handleSession(data.session);
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      window.setTimeout(() => handleSession(session), 0);
+    });
+  } catch (error) {
+    console.warn("Restaurant Atlas cloud connection unavailable:", error.message);
+    setSyncStatus("Local only", "error");
+    updateAccountUI();
+  }
+}
+
+async function handleSession(session) {
+  state.session = session;
+  state.memberRole = "";
+  state.remote = false;
+  disconnectRealtime();
+  updateAccountUI();
+  if (!session || !supabaseClient) {
+    setSyncStatus("Local only", "");
+    return;
+  }
+
+  setSyncStatus("Checking access…", "");
+  try {
+    const { data: role, error } = await supabaseClient.rpc("claim_atlas_membership");
+    if (error) throw error;
+    if (!role) {
+      setSyncStatus("Access pending", "error");
+      showToast("This email is signed in but has not been approved yet.");
+      updateAccountUI();
+      return;
+    }
+    state.memberRole = role;
+    state.remote = true;
+    updateAccountUI();
+    await refreshRemoteRestaurants(true);
+    subscribeToRemoteChanges();
+  } catch (error) {
+    console.warn("Restaurant Atlas sign-in check failed:", error.message);
+    setSyncStatus("Sync unavailable", "error");
+    showToast("Cloud sync is unavailable. Your browser copy is still safe.");
+  }
+}
+
+async function sendSignInLink(event) {
+  event.preventDefault();
+  if (!supabaseClient) {
+    showToast("Sign-in is not available right now.");
+    return;
+  }
+  const email = el.authEmail.value.trim();
+  const button = el.authForm.querySelector("button[type='submit']");
+  button.disabled = true;
+  try {
+    const { error } = await supabaseClient.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${location.origin}${location.pathname}` }
+    });
+    if (error) throw error;
+    setModal(el.authModal, false);
+    el.authForm.reset();
+    showToast("Sign-in link sent. Check your email.");
+  } catch (error) {
+    showToast(error.message || "The sign-in link could not be sent.");
+  } finally {
+    button.disabled = false;
+  }
+}
+
+async function signOut() {
+  if (!supabaseClient) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) showToast("Could not sign out. Please try again.");
+  else showToast("Signed out. This browser copy remains available.");
+}
+
+function updateAccountUI() {
+  const signedIn = Boolean(state.session);
+  el.signInButton.hidden = signedIn;
+  el.signOutButton.hidden = !signedIn;
+  el.historyButton.hidden = !state.remote;
+  el.membersButton.hidden = !(state.remote && state.memberRole === "owner");
+  el.signOutButton.title = signedIn ? state.session.user.email || "Signed in" : "";
+}
+
+function setSyncStatus(label, kind = "") {
+  el.syncStatus.lastChild.textContent = ` ${label}`;
+  el.syncStatus.classList.toggle("is-synced", kind === "synced");
+  el.syncStatus.classList.toggle("is-error", kind === "error");
+}
+
+function setModal(modal, open, focusTarget = null) {
+  if (open) state.lastFocus = document.activeElement;
+  modal.hidden = !open;
+  const anyOpen = [el.restaurantModal, el.authModal, el.membersModal, el.historyModal].some(item => !item.hidden);
+  document.body.classList.toggle("modal-open", anyOpen);
+  if (open) requestAnimationFrame(() => (focusTarget || modal.querySelector("button, input, select, textarea"))?.focus());
+  else state.lastFocus?.focus?.();
+}
+
+async function refreshRemoteRestaurants(migrateLocalIfEmpty = false) {
+  if (!state.remote || state.cloudBusy) return;
+  state.cloudBusy = true;
+  setSyncStatus("Syncing…", "");
+  try {
+    const { data, error } = await supabaseClient.from("restaurants").select("*").order("created", { ascending: true });
+    if (error) throw error;
+    let rows = data || [];
+    if (!rows.length && migrateLocalIfEmpty && state.restaurants.length) {
+      const { data: migrated, error: migrationError } = await supabaseClient
+        .from("restaurants").insert(state.restaurants.map(toRemote)).select();
+      if (migrationError) throw migrationError;
+      rows = migrated || [];
+      showToast(`Shared atlas started with ${rows.length} restaurants from this browser.`);
+    }
+    state.restaurants = rows.map(fromRemote);
+    safeStorageSet(state.restaurants);
+    render();
+    setSyncStatus("Synced", "synced");
+  } catch (error) {
+    console.warn("Restaurant Atlas refresh failed:", error.message);
+    setSyncStatus("Sync paused", "error");
+    showToast("Could not refresh the shared atlas. Showing the saved browser copy.");
+  } finally {
+    state.cloudBusy = false;
+  }
+}
+
+function subscribeToRemoteChanges() {
+  disconnectRealtime();
+  state.remoteChannel = supabaseClient
+    .channel("restaurant-atlas-sync")
+    .on("postgres_changes", { event: "*", schema: "public", table: "restaurants" }, () => {
+      clearTimeout(subscribeToRemoteChanges.refreshTimer);
+      subscribeToRemoteChanges.refreshTimer = setTimeout(() => refreshRemoteRestaurants(false), 150);
+    })
+    .subscribe(status => {
+      if (status === "SUBSCRIBED") setSyncStatus("Synced", "synced");
+      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") setSyncStatus("Sync reconnecting", "error");
+    });
+}
+
+function disconnectRealtime() {
+  clearTimeout(subscribeToRemoteChanges.refreshTimer);
+  if (state.remoteChannel && supabaseClient) supabaseClient.removeChannel(state.remoteChannel);
+  state.remoteChannel = null;
+}
+
+async function openHistory() {
+  setModal(el.historyModal, true);
+  el.historyList.innerHTML = "<p>Loading history…</p>";
+  const { data, error } = await supabaseClient.from("restaurant_history").select("*").order("changed_at", { ascending: false }).limit(100);
+  if (error) {
+    el.historyList.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  if (!data.length) {
+    el.historyList.innerHTML = "<p>No shared changes yet.</p>";
+    return;
+  }
+  el.historyList.innerHTML = data.map(entry => {
+    const name = entry.snapshot?.name || "Restaurant";
+    const when = new Date(entry.changed_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    return `<article class="history-item"><strong>${escapeHtml(name)}</strong><div class="history-meta"><span class="history-action">${escapeHtml(entry.action)}</span><span>${escapeHtml(entry.changed_by_email || "Atlas member")}</span><time datetime="${escapeHtml(entry.changed_at)}">${escapeHtml(when)}</time></div></article>`;
+  }).join("");
+}
+
+async function openMembers() {
+  if (state.memberRole !== "owner") return;
+  setModal(el.membersModal, true, el.memberEmail);
+  await loadMembers();
+}
+
+async function loadMembers() {
+  el.memberList.innerHTML = "<p>Loading members…</p>";
+  const { data, error } = await supabaseClient.from("atlas_members").select("*").order("created_at", { ascending: true });
+  if (error) {
+    el.memberList.innerHTML = `<p>${escapeHtml(error.message)}</p>`;
+    return;
+  }
+  el.memberList.innerHTML = data.map(member => `<div class="member-row" data-member-id="${escapeHtml(member.id)}">
+    <input type="email" aria-label="Member email" value="${escapeHtml(member.email)}">
+    <select aria-label="Member role"><option value="member" ${member.role === "member" ? "selected" : ""}>Member</option><option value="owner" ${member.role === "owner" ? "selected" : ""}>Owner</option></select>
+    <div class="member-actions"><button class="button button--quiet" type="button" data-member-action="save">Save</button><button class="button button--danger" type="button" data-member-action="remove">Remove</button></div>
+  </div>`).join("");
+}
+
+async function addMember(event) {
+  event.preventDefault();
+  const email = el.memberEmail.value.trim().toLowerCase();
+  const { error } = await supabaseClient.from("atlas_members").insert({
+    email, role: "member", invited_by: state.session.user.id
+  });
+  if (error) {
+    showToast(error.code === "23505" ? "That email is already approved." : error.message);
+    return;
+  }
+  el.memberForm.reset();
+  await loadMembers();
+  showToast("Member email approved.");
+}
+
+async function handleMemberAction(event) {
+  const button = event.target.closest("button[data-member-action]");
+  if (!button) return;
+  const row = button.closest("[data-member-id]");
+  const id = row.dataset.memberId;
+  button.disabled = true;
+  let error;
+  if (button.dataset.memberAction === "remove") {
+    ({ error } = await supabaseClient.from("atlas_members").delete().eq("id", id));
+  } else {
+    const email = row.querySelector("input").value.trim().toLowerCase();
+    const role = row.querySelector("select").value;
+    ({ error } = await supabaseClient.from("atlas_members").update({ email, role, user_id: null }).eq("id", id));
+  }
+  if (error) showToast(error.message.includes("always have an owner") ? "Add another owner before changing the last owner." : error.message);
+  else {
+    await loadMembers();
+    showToast(button.dataset.memberAction === "remove" ? "Member removed." : "Member updated.");
+  }
+  button.disabled = false;
 }
 
 function weightedScore(restaurant) {
@@ -234,27 +521,80 @@ function updateVerdictButtons(value) {
   document.querySelectorAll("[data-verdict]").forEach(button => button.setAttribute("aria-pressed", String(button.dataset.verdict === value)));
 }
 
-function saveForm(event) {
+async function saveForm(event) {
   event.preventDefault();
   const existing = state.restaurants.find(item => item.id === el.recordId.value);
   const candidate = normalizeRestaurant({
     id: existing?.id || `restaurant-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
     name: el.name.value, cuisine: existing?.cuisine || "Uncategorised", visited: existing?.visited || "",
     food: scoreFromInput(el.food), ambiance: scoreFromInput(el.ambiance), price: scoreFromInput(el.price), overall: el.overall.value,
-    returnVerdict: el.returnVerdict.value, dish: el.dish.value, notes: el.notes.value, created: existing?.created || new Date().toISOString()
+    returnVerdict: el.returnVerdict.value, dish: el.dish.value, notes: el.notes.value, created: existing?.created || new Date().toISOString(),
+    version: existing?.version || 0
   });
-  if (existing) state.restaurants[state.restaurants.indexOf(existing)] = candidate; else state.restaurants.push(candidate);
-  persistAndRender(); closeModal(); showToast(existing ? "Restaurant updated." : "Restaurant added to the atlas.");
+  const submitButton = el.restaurantForm.querySelector("button[type='submit']");
+  submitButton.disabled = true;
+  try {
+    if (state.remote) {
+      let response;
+      if (existing) {
+        response = await supabaseClient.from("restaurants").update(toRemote(candidate))
+          .eq("id", existing.id).eq("version", existing.version).select().maybeSingle();
+      } else {
+        response = await supabaseClient.from("restaurants").insert(toRemote(candidate)).select().single();
+      }
+      if (response.error) throw response.error;
+      if (!response.data) {
+        await refreshRemoteRestaurants(false);
+        showToast("Someone changed this entry first. Their latest version is now shown.");
+        closeModal();
+        return;
+      }
+      const saved = fromRemote(response.data);
+      if (existing) state.restaurants[state.restaurants.indexOf(existing)] = saved;
+      else state.restaurants.push(saved);
+    } else if (existing) state.restaurants[state.restaurants.indexOf(existing)] = candidate;
+    else state.restaurants.push(candidate);
+    persistAndRender();
+    closeModal();
+    setSyncStatus(state.remote ? "Synced" : "Local only", state.remote ? "synced" : "");
+    showToast(existing ? "Restaurant updated." : "Restaurant added to the atlas.");
+  } catch (error) {
+    console.warn("Restaurant Atlas save failed:", error.message);
+    setSyncStatus(state.remote ? "Sync paused" : "Local only", state.remote ? "error" : "");
+    showToast(state.remote ? "This change was not saved. Check your connection and try again." : "This change could not be saved.");
+  } finally {
+    submitButton.disabled = false;
+  }
 }
 
-function handleDelete() {
+async function handleDelete() {
   if (!el.deleteRestaurant.classList.contains("is-armed")) {
     el.deleteRestaurant.classList.add("is-armed"); el.deleteRestaurant.textContent = "Tap again to confirm";
     state.deleteTimer = setTimeout(resetDeleteButton, 3500); return;
   }
   const id = el.recordId.value;
-  state.restaurants = state.restaurants.filter(item => item.id !== id);
-  persistAndRender(); closeModal(); showToast("Restaurant deleted.");
+  const existing = state.restaurants.find(item => item.id === id);
+  el.deleteRestaurant.disabled = true;
+  try {
+    if (state.remote) {
+      const { data, error } = await supabaseClient.from("restaurants").delete()
+        .eq("id", id).eq("version", existing.version).select().maybeSingle();
+      if (error) throw error;
+      if (!data) {
+        await refreshRemoteRestaurants(false);
+        showToast("Someone changed this entry first. Their latest version is now shown.");
+        closeModal();
+        return;
+      }
+    }
+    state.restaurants = state.restaurants.filter(item => item.id !== id);
+    persistAndRender(); closeModal(); showToast("Restaurant deleted.");
+  } catch (error) {
+    console.warn("Restaurant Atlas delete failed:", error.message);
+    showToast("This entry could not be deleted. Please try again.");
+  } finally {
+    el.deleteRestaurant.disabled = false;
+  }
 }
 
 function resetDeleteButton() {
@@ -288,6 +628,11 @@ async function importData(event) {
       if (matchIndex >= 0) { incoming.id = state.restaurants[matchIndex].id; state.restaurants[matchIndex] = incoming; updated += 1; }
       else { state.restaurants.push(incoming); added += 1; }
     });
+    if (state.remote) {
+      const { data, error } = await supabaseClient.from("restaurants").upsert(state.restaurants.map(toRemote), { onConflict: "id" }).select();
+      if (error) throw error;
+      state.restaurants = data.map(fromRemote);
+    }
     persistAndRender(); showToast(`Import complete: ${updated} updated, ${added} added.`);
   } catch { showToast("That file could not be imported. Check its JSON format."); }
 }
