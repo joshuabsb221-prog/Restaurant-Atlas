@@ -138,6 +138,9 @@ input[type="range"] { min-height: 25px; padding: 0; accent-color: var(--leaf); }
 .modal__footer { position: sticky; bottom: 0; display: flex; align-items: center; justify-content: space-between; gap: 15px; padding: 16px 25px; border-top: 1px solid var(--border); background: var(--paper-light); }
 .modal__footer-right { display: flex; gap: 8px; margin-left: auto; }
 .modal-copy { margin: 0 0 18px; color: var(--muted); }
+.auth-code-row { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--border); }
+.auth-code-row .button { min-height: 43px; }
+.auth-help { margin: 10px 0 0; }
 .invite-form { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 10px; }
 .invite-form .button { margin-bottom: 0; }
 .members-help { margin: 12px 0 18px; }
@@ -182,7 +185,8 @@ body.modal-open { overflow: hidden; }
   .modal__footer { align-items: stretch; flex-direction: column-reverse; }
   .modal__footer-right { width: 100%; }
   .modal__footer-right .button, .modal__footer > .button { flex: 1; }
-  .invite-form, .member-row { grid-template-columns: 1fr; }
+  .auth-code-row, .invite-form, .member-row { grid-template-columns: 1fr; }
+  .auth-code-row .button { width: 100%; }
   .member-actions { justify-content: flex-end; }
 }
 @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior: auto !important; transition: none !important; } }

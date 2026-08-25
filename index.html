@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="assets/styles.css?v=20260825-2">
+  <link rel="stylesheet" href="assets/styles.css?v=20260825-3">
 </head>
 <body>
   <svg class="svg-sprite" aria-hidden="true">
@@ -103,10 +103,15 @@
       <header class="modal__header"><div><p class="eyebrow eyebrow--green">Shared atlas</p><h2 id="authTitle">Sign in to sync</h2></div><button class="icon-button" type="button" data-close-auth aria-label="Close sign-in"><svg><use href="#icon-close"/></svg></button></header>
       <form id="authForm">
         <div class="modal__body">
-          <p class="modal-copy">Use an approved email address. We’ll send a secure sign-in link—no password needed.</p>
+          <p class="modal-copy" id="authHelp">Use an approved email address. We’ll email a secure sign-in link—no password needed.</p>
           <label class="field"><span>Email address</span><input id="authEmail" name="email" type="email" required autocomplete="email" placeholder="you@example.com"></label>
+          <div class="auth-code-row">
+            <label class="field"><span>Copied sign-in link</span><input id="authCode" name="code" type="text" inputmode="url" autocomplete="off" placeholder="Paste the email link here"></label>
+            <button class="button button--green" id="verifyCodeButton" type="button">Sign in here</button>
+          </div>
+          <p class="field-help auth-help">Using the Home Screen app? In the email, press and hold <b>Sign in</b>, choose <b>Copy Link</b>, return here, and paste it above. Don’t open the link first.</p>
         </div>
-        <footer class="modal__footer"><button class="button button--quiet" type="button" data-close-auth>Cancel</button><button class="button button--green" type="submit">Send sign-in link</button></footer>
+        <footer class="modal__footer"><button class="button button--quiet" type="button" data-close-auth>Cancel</button><button class="button button--quiet" type="submit">Email me a sign-in link</button></footer>
       </form>
     </section>
   </div>
@@ -132,6 +137,6 @@
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" defer></script>
-  <script src="assets/app.js?v=20260825-3" defer></script>
+  <script src="assets/app.js?v=20260825-4" defer></script>
 </body>
 </html>

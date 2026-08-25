@@ -36,7 +36,7 @@ To rebalance the categories, edit the `WEIGHTS` constant at the top of `assets/a
 
 ## Shared access and backups
 
-Approved people select **Sign in to sync**, enter their email address and use the secure link sent to their inbox. Signed-in members see the same restaurant list, receive live updates, and can open **History** to see who changed an entry and when.
+Approved people select **Sign in to sync** and enter their email address. In a normal browser they can open the secure link in the email. People using an iPhone or Android Home Screen app should press and hold the email’s **Sign in** link, choose **Copy Link**, return to the Home Screen app, and paste it into the sign-in dialog. This verifies the exact app instead of a separate browser session. Signed-in members see the same restaurant list, receive live updates, and can open **History** to see who changed an entry and when.
 
 Owners also see **Members**. From there, they can add another email, correct or replace an existing address, promote a member to owner, or remove access. The database prevents the final owner from being removed or demoted.
 

@@ -47,7 +47,7 @@ function cacheElements() {
     "statTotal","statRated","statAverage","statTop","statReturn","addRestaurant","exportData","importData","importFile",
     "restaurantModal","restaurantForm","modalTitle","modalEyebrow","recordId","name","food","ambiance",
     "price","overall","returnVerdict","dish","notes","weightedAverage","deleteRestaurant","toast",
-    "syncStatus","signInButton","historyButton","membersButton","signOutButton","authModal","authForm","authEmail",
+    "syncStatus","signInButton","historyButton","membersButton","signOutButton","authModal","authForm","authEmail","authCode","authHelp","verifyCodeButton",
     "membersModal","memberForm","memberEmail","memberList","historyModal","historyList"
   ].forEach(id => { el[id] = document.getElementById(id); });
 }
@@ -82,6 +82,10 @@ function bindEvents() {
   el.importFile.addEventListener("change", importData);
   el.signInButton.addEventListener("click", () => setModal(el.authModal, true, el.authEmail));
   el.authForm.addEventListener("submit", sendSignInLink);
+  el.verifyCodeButton.addEventListener("click", verifyEmailCode);
+  el.authCode.addEventListener("keydown", event => {
+    if (event.key === "Enter") { event.preventDefault(); verifyEmailCode(); }
+  });
   el.signOutButton.addEventListener("click", signOut);
   el.historyButton.addEventListener("click", openHistory);
   el.membersButton.addEventListener("click", openMembers);
@@ -236,14 +240,67 @@ async function sendSignInLink(event) {
       options: { emailRedirectTo: `${location.origin}${location.pathname}` }
     });
     if (error) throw error;
-    setModal(el.authModal, false);
-    el.authForm.reset();
-    showToast("Sign-in link sent. Check your email.");
+    el.authHelp.textContent = "Email sent. In the email, press and hold Sign in, copy its link, then return and paste it below.";
+    el.authCode.focus();
+    showToast("Sign-in email sent. Copy its link, then return here.");
   } catch (error) {
-    showToast(error.message || "The sign-in link could not be sent.");
+    showToast(error.message || "The sign-in email could not be sent.");
   } finally {
     button.disabled = false;
   }
+}
+
+async function verifyEmailCode() {
+  if (!supabaseClient) {
+    showToast("Sign-in is not available right now.");
+    return;
+  }
+  const email = el.authEmail.value.trim();
+  const credential = el.authCode.value.trim();
+  if (!el.authEmail.checkValidity()) {
+    el.authEmail.reportValidity();
+    return;
+  }
+  const linkCredential = verificationFromLink(credential);
+  const isEmailCode = /^\d{6}$/.test(credential);
+  if (!linkCredential && !isEmailCode) {
+    showToast("Paste the copied Sign in link from your email.");
+    el.authCode.focus();
+    return;
+  }
+  el.verifyCodeButton.disabled = true;
+  try {
+    const verification = linkCredential
+      ? { token_hash: linkCredential.tokenHash, type: linkCredential.type }
+      : { email, token: credential, type: "email" };
+    const { error } = await supabaseClient.auth.verifyOtp(verification);
+    if (error) throw error;
+    setModal(el.authModal, false);
+    el.authForm.reset();
+    el.authHelp.textContent = "Use an approved email address. We’ll email a secure sign-in link—no password needed.";
+    showToast("Signed in. Your shared atlas is syncing now.");
+  } catch (error) {
+    showToast(error.message || "That link is invalid or has expired. Request a new one.");
+  } finally {
+    el.verifyCodeButton.disabled = false;
+  }
+}
+
+function verificationFromLink(value) {
+  let candidate = value;
+  const allowedTypes = new Set(["magiclink", "email", "signup", "invite", "recovery", "email_change"]);
+  for (let depth = 0; depth < 3; depth += 1) {
+    try {
+      const url = new URL(candidate);
+      const tokenHash = url.searchParams.get("token_hash") || url.searchParams.get("token");
+      const type = url.searchParams.get("type");
+      if (tokenHash && allowedTypes.has(type)) return { tokenHash, type };
+      const nested = ["url", "q", "u", "target", "redirect"].map(key => url.searchParams.get(key)).find(Boolean);
+      if (!nested) return null;
+      candidate = decodeURIComponent(nested);
+    } catch { return null; }
+  }
+  return null;
 }
 
 async function signOut() {
@@ -656,4 +713,4 @@ function escapeHtml(value) {
   return String(value).replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
-window.RestaurantAtlas = Object.freeze({ WEIGHTS, weightedScore, effectiveScore, normalizeRestaurant });
+window.RestaurantAtlas = Object.freeze({ WEIGHTS, weightedScore, effectiveScore, normalizeRestaurant, verificationFromLink });
